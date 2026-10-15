@@ -1,0 +1,64 @@
+name: telling_kit
+description: >-
+  Telling for DartNative: crash reporting, error tracking and analytics with
+  offline batching, sessions and uncaught-error capture — the telling_logger
+  API, without Flutter.
+version: 1.0.0
+
+repository: https://github.com/ThatSaxyDev/telling_kit
+homepage: https://github.com/ThatSaxyDev/telling_kit
+issue_tracker: https://github.com/ThatSaxyDev/telling_kit/issues
+
+topics:
+  - dartnative
+  - observability
+  - logging
+  - crash-reporting
+  - analytics
+
+environment:
+  # Matches the DartNative SDK's own floor (`dartnative` declares ^3.9.0-0), so
+  # the constraint resolves on a stable SDK rather than requiring the pinned dev
+  # prerelease the consuming app happens to run.
+  sdk: ^3.9.0
+
+dependencies:
+  # The DartNative framework. Supplied by the `dn` SDK cache (resolved as a
+  # dependency override), so a plain hosted constraint is all that is needed —
+  # see the note on the plugin block below.
+  dartnative: ^1.0.0
+  # Storage for the offline log buffer and the first_open / last_version keys.
+  dartnative_shared_preferences: ^1.0.0
+  # App name / version / build number, read from Info.plist / PackageManager.
+  dartnative_system: ^1.0.0
+  ffi: ^2.1.4
+  http: ^1.6.0
+  stack_trace: ^1.12.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0
+
+# A plugin block with NO `platforms:` — this package ships no native code, so
+# there is nothing for the iOS/Android registrants or the podspec/gradle wiring
+# to do. Declaring `platforms:` here would make `dn pub get` look for an
+# `.xcframework`/`.aar` that does not exist.
+#
+# Device metadata comes from libc directly through dart:ffi (`sysctlbyname` on
+# Apple, `__system_property_get` on Android) rather than a native plugin, and
+# storage / app info are delegated to dartnative_shared_preferences and
+# dartnative_system. `loadSymbols()` is therefore only a warm-up for the libc
+# lookups — it must stay idempotent and must never throw, since a platform it
+# cannot probe is not a failure.
+#
+# The registrant block still makes `dn pub get` treat this as a first-class
+# DartNative plugin: the generated lib/dartnative_plugin_registrant.dart imports
+# it, calls loadSymbols() inside its per-plugin guard, and reports usage.
+dartnative:
+  plugin:
+    platforms: {}
+  registrant:
+    imports:
+      - package:telling_kit/telling_kit.dart
+    calls:
+      - TellingBindings.loadSymbols();
