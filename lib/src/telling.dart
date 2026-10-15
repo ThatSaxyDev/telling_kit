@@ -100,8 +100,7 @@ class Telling implements TellingCrashSink {
 
   /// Base URL of the Telling ingestion API.
   ///
-  /// Overridable for self-hosted deployments and integration tests; the
-  /// Flutter original hardcoded it.
+  /// Overridable for integration tests; the Flutter original hardcoded it.
   static String serverUrl = 'https://telling-api.kiishi.space/api/v1';
 
   String? _apiKey;

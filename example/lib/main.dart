@@ -13,9 +13,6 @@ import 'package:telling_kit/telling_kit.dart';
 /// the example is safe to run before you have one.
 const _apiKey = String.fromEnvironment('TELLING_API_KEY');
 
-/// Point the SDK at a different ingestion host if you are self-hosting.
-const _baseUrl = String.fromEnvironment('TELLING_BASE_URL');
-
 void main() {
   // Platform bindings + (once you add plugins) their FFI symbols. Keep this
   // as the FIRST line of main().
@@ -62,7 +59,6 @@ class _ExampleAppState extends State<ExampleApp> {
 
     await Telling.instance.init(
       _apiKey,
-      baseUrl: _baseUrl.isEmpty ? null : _baseUrl,
       enableDebugLogs: true,
     );
 

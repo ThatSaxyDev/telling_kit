@@ -13,9 +13,7 @@ dn run -d <device-id> --dart-define=TELLING_API_KEY=your_key
 ```
 
 `TELLING_API_KEY` is optional — without it the SDK stays uninitialised and every
-call is a no-op, so the app runs fine and simply reports nothing. You can also
-point it at your own host with `--dart-define=TELLING_BASE_URL=…`, which
-`init(baseUrl:)` picks up.
+call is a no-op, so the app runs fine and simply reports nothing.
 
 Hit **Crash for real** to watch an uncaught error travel: it reaches the isolate
 error listener armed by `armCrashCapture()`, and the example dies on purpose.

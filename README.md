@@ -80,15 +80,9 @@ Two rules, both load-bearing:
 to a no-op, which is what makes this package testable in CI and debug builds
 without a key.
 
-### Self-hosting
+### Keeping the key out of source
 
-`init` takes a `baseUrl`, which overrides the default ingestion host:
-
-```dart
-await Telling.instance.init(apiKey, baseUrl: 'https://your-host/api/v1');
-```
-
-Keep the key out of source. Read it from a build-time define:
+Read it from a build-time define rather than committing it:
 
 ```dart
 const apiKey = String.fromEnvironment('TELLING_API_KEY');
