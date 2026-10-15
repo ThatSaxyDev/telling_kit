@@ -29,3 +29,10 @@ Thumbs.db
 *.iml
 .idea/
 .vscode/
+
+# …except inside the example, where `dn create` writes a settings.json that
+# stops VS Code running its own `dart pub get` — plain pub cannot resolve the
+# DartNative packages, so without it the example opens with every dartnative
+# import flagged as unresolved.
+!example/.vscode/
+!example/.vscode/settings.json
