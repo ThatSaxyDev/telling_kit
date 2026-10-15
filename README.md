@@ -1,7 +1,7 @@
 # telling_kit
 
-Telling for [DartNative](https://dartnative.com) — crash reporting, error
-tracking and analytics, with the
+[Telling](https://telling.cv) for [DartNative](https://dartnative.com) — crash
+reporting, error tracking and analytics, with the
 [`telling_logger`](https://pub.dev/packages/telling_logger) API. Code written
 against the Flutter package ports by changing one import.
 
