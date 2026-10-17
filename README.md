@@ -30,6 +30,9 @@ Flutter-bound pieces:
 
 ```yaml
 dependencies:
+  dartnative: ^1.0.0
+  dartnative_shared_preferences: ^1.0.0
+  dartnative_system: ^1.0.0
   telling_kit:
     hosted: https://dartpub.dev
     version: ^1.0.1
@@ -39,9 +42,11 @@ dependencies:
 dn pub get
 ```
 
-`dn pub get` picks the package up and generates the plugin registrant for you —
-app developers add one dependency and touch nothing else. There is nothing to
-link: no `.xcframework`, no `.aar`, no podspec, no gradle module.
+`dn pub get` resolves the package and the two SDK-managed plugins, then generates
+the plugin registrant. Declare `dartnative_shared_preferences` and
+`dartnative_system` directly in the app, as above: the registry source archive
+omits SDK-managed dependencies from the pubspec supplied to Dart pub. There is
+nothing to link: no `.xcframework`, no `.aar`, no podspec, no gradle module.
 
 ## Quickstart
 
