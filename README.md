@@ -32,7 +32,7 @@ Flutter-bound pieces:
 dependencies:
   telling_kit:
     hosted: https://dartpub.dev
-    version: ^1.0.0
+    version: ^1.0.1
 ```
 
 ```sh
@@ -196,3 +196,35 @@ null-aware marker would be a type error there.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Version and build checks
+
+From version 1.0.1, `checkVersion()` automatically sends the installed build number
+alongside the version to Telling's project API. Configure optional iOS and Android
+minimum builds in your project's version configuration in the Telling app or website.
+Version and build minimums are independent; falling below either triggers an update.
+Use positive integer builds that increase across releases. Clear a minimum build to
+disable it. Missing or nonnumeric installed builds keep the version-only behavior.
+
+```dart
+final result = await Telling.instance.checkVersion();
+if (result.requiresUpdate && !result.isRequired && result.minVersion != null) {
+  // When the user chooses Later:
+  await Telling.instance.snoozeUpdate(
+    days: 3,
+    minVersion: result.minVersion!,
+    target: result.snoozeTarget,
+  );
+}
+// Before opening the update URL after the user accepts:
+// await Telling.instance.acceptUpdate(
+//   minVersion: result.minVersion, target: result.snoozeTarget,
+// );
+```
+
+Results include `minBuild`, `target`, and `decisionSource`. `snoozeTarget` falls back
+to `minVersion` against older servers. A new build target prompts again even during
+an earlier optional-update snooze. Mandatory updates bypass snoozes. Checks fail open
+on HTTP, parsing or timeout errors. Old method calls remain source-compatible;
+pass the target to snooze build-based updates. No DartNative native binding changes
+are needed.

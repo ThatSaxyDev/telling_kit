@@ -11,7 +11,8 @@ import 'device_info_collector.dart';
 import 'models/device_metadata.dart';
 import 'models/log_event.dart';
 import 'models/session.dart';
-import 'models/version_check_result.dart';
+import 'package:telling_kit/src/models/version_check_result.dart';
+import 'package:telling_kit/src/version_check.dart';
 import 'rate_limiter.dart';
 import 'utils/stack_trace_parser.dart';
 
@@ -40,7 +41,11 @@ class HttpTellingTransport implements TellingTransport {
   const HttpTellingTransport();
 
   @override
-  Future<int> postJson(String url, Map<String, String> headers, List<int> body) async {
+  Future<int> postJson(
+    String url,
+    Map<String, String> headers,
+    List<int> body,
+  ) async {
     final response = await http.post(
       Uri.parse(url),
       headers: headers,
@@ -50,7 +55,10 @@ class HttpTellingTransport implements TellingTransport {
   }
 
   @override
-  Future<TellingResponse> getJson(String url, Map<String, String> headers) async {
+  Future<TellingResponse> getJson(
+    String url,
+    Map<String, String> headers,
+  ) async {
     final response = await http.get(Uri.parse(url), headers: headers);
     final decoded = response.statusCode == 200 && response.body.isNotEmpty
         ? jsonDecode(response.body) as Map<String, dynamic>
@@ -183,7 +191,8 @@ class Telling implements TellingCrashSink {
       _transport = transport;
 
   /// Restore the real transport.
-  static void debugResetTransport() => _transport = const HttpTellingTransport();
+  static void debugResetTransport() =>
+      _transport = const HttpTellingTransport();
 
   /// Row `source` for events the SDK emits on its own lifecycle.
   static const String eventSourceSdk = 'sdk';
@@ -266,6 +275,7 @@ class Telling implements TellingCrashSink {
     }
 
     final currentVersion = _deviceMetadata?.appVersion;
+    final currentBuild = _deviceMetadata?.appBuildNumber;
     if (currentVersion == null) {
       return VersionCheckResult.noUpdateRequired;
     }
@@ -276,39 +286,25 @@ class Telling implements TellingCrashSink {
         return VersionCheckResult.noUpdateRequired;
       }
 
-      final uri = Uri.parse('$serverUrl/project/version-check').replace(
-        queryParameters: <String, String>{
-          'platform': platform,
-          'version': currentVersion,
+      final result = await fetchVersionCheck(
+        serverUrl: serverUrl,
+        platform: platform,
+        version: currentVersion,
+        build: currentBuild,
+        apiKey: _apiKey!,
+        get: (uri, headers) async {
+          final response = await transport.getJson(uri.toString(), headers);
+          return response.statusCode == 200 ? response.body : null;
         },
       );
-
-      final response = await transport.getJson(
-        uri.toString(),
-        <String, String>{
-          'x-api-key': _apiKey!,
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode != 200) {
-        if (_enableDebugLogs) {
-          print(
-            'Failed to check version: ${response.statusCode}',
-          );
-        }
-        return VersionCheckResult.noUpdateRequired;
-      }
-
-      final data = response.body;
-
-      final requiresUpdate = data['requiresUpdate'] as bool? ?? false;
-      final isRequired = data['isRequired'] as bool? ?? false;
-      final minVersion = data['minVersion'] as String?;
+      final requiresUpdate = result.requiresUpdate;
+      final isRequired = result.isRequired;
+      final minVersion = result.minVersion;
+      final updateTarget = result.snoozeTarget;
 
       // For non-compulsory updates, check if user has snoozed this version
-      if (requiresUpdate && !isRequired && minVersion != null) {
-        final isSnoozed = await _isUpdateSnoozed(minVersion);
+      if (requiresUpdate && !isRequired && updateTarget != null) {
+        final isSnoozed = await _isUpdateSnoozed(result);
         if (isSnoozed) {
           if (_enableDebugLogs) {
             print('Telling: Update snoozed for min version $minVersion');
@@ -322,20 +318,16 @@ class Telling implements TellingCrashSink {
               'is_required': false,
               'min_version': minVersion,
               'current_version': currentVersion,
+              'current_build': currentBuild,
+              'min_build': result.minBuild,
+              'target': updateTarget,
+              'decision_source': result.decisionSource,
               'is_snoozed': true,
             },
           );
           return VersionCheckResult.noUpdateRequired;
         }
       }
-
-      final result = VersionCheckResult(
-        requiresUpdate: requiresUpdate,
-        isRequired: isRequired,
-        storeUrl: data['storeUrl'] as String?,
-        message: data['message'] as String?,
-        minVersion: minVersion,
-      );
 
       _sdkLog(
         'update_check_completed',
@@ -346,6 +338,10 @@ class Telling implements TellingCrashSink {
           'is_required': result.isRequired,
           'min_version': minVersion,
           'current_version': currentVersion,
+          'current_build': currentBuild,
+          'min_build': result.minBuild,
+          'target': updateTarget,
+          'decision_source': result.decisionSource,
           'is_snoozed': false,
         },
       );
@@ -359,6 +355,10 @@ class Telling implements TellingCrashSink {
             'is_required': result.isRequired,
             'min_version': minVersion,
             'current_version': currentVersion,
+            'current_build': currentBuild,
+            'min_build': result.minBuild,
+            'target': updateTarget,
+            'decision_source': result.decisionSource,
           },
         );
       }
@@ -382,29 +382,15 @@ class Telling implements TellingCrashSink {
     };
   }
 
-  /// Check if the user has snoozed updates for a specific min version.
-  Future<bool> _isUpdateSnoozed(String minVersion) async {
+  /// Check snoozes against the exact target, including a triggering build.
+  Future<bool> _isUpdateSnoozed(VersionCheckResult result) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final snoozedUntilStr = prefs.getString(_updateSnoozedUntilKey);
-      final snoozedMinVersion = prefs.getString(_snoozedMinVersionKey);
-
-      if (snoozedUntilStr == null || snoozedMinVersion == null) {
-        return false;
-      }
-
-      // A snooze is scoped to the version that triggered it — bumping the
-      // minimum version re-prompts even inside an active snooze window.
-      if (snoozedMinVersion != minVersion) {
-        return false;
-      }
-
-      final snoozedUntil = DateTime.tryParse(snoozedUntilStr);
-      if (snoozedUntil == null) {
-        return false;
-      }
-
-      return DateTime.now().isBefore(snoozedUntil);
+      return isUpdateSnoozed(
+        result: result,
+        storedTarget: prefs.getString(_snoozedMinVersionKey),
+        storedUntil: prefs.getString(_updateSnoozedUntilKey),
+      );
     } catch (e) {
       if (_enableDebugLogs) {
         print('Telling: Failed to check snooze state: $e');
@@ -415,11 +401,12 @@ class Telling implements TellingCrashSink {
 
   /// Suppress the update prompt for [days] days (0-3).
   ///
-  /// The snooze is scoped to [minVersion]: bumping the minimum version on the
-  /// dashboard re-prompts immediately.
+  /// Pass [target] from VersionCheckResult.snoozeTarget so a new build minimum
+  /// re-prompts immediately. Without it, the snooze applies to [minVersion] only.
   Future<void> snoozeUpdate({
     required int days,
     required String minVersion,
+    String? target,
   }) async {
     if (!_initialized || _apiKey == null) {
       if (_enableDebugLogs) print('Telling SDK not initialized');
@@ -431,8 +418,11 @@ class Telling implements TellingCrashSink {
       final clampedDays = days.clamp(0, 3);
       final snoozeUntil = DateTime.now().add(Duration(days: clampedDays));
 
-      await prefs.setString(_updateSnoozedUntilKey, snoozeUntil.toIso8601String());
-      await prefs.setString(_snoozedMinVersionKey, minVersion);
+      await prefs.setString(
+        _updateSnoozedUntilKey,
+        snoozeUntil.toIso8601String(),
+      );
+      await prefs.setString(_snoozedMinVersionKey, target ?? minVersion);
 
       if (_enableDebugLogs) {
         print('Telling: Update snoozed for $clampedDays day(s)');
@@ -446,6 +436,8 @@ class Telling implements TellingCrashSink {
           'snooze_days': clampedDays,
           'min_version': minVersion,
           'current_version': _deviceMetadata?.appVersion,
+          'current_build': _deviceMetadata?.appBuildNumber,
+          'target': target ?? minVersion,
         },
       );
 
@@ -458,7 +450,7 @@ class Telling implements TellingCrashSink {
   }
 
   /// Record that the user accepted the update, before opening the store.
-  Future<void> acceptUpdate({String? minVersion}) async {
+  Future<void> acceptUpdate({String? minVersion, String? target}) async {
     if (!_initialized || _apiKey == null) {
       if (_enableDebugLogs) print('Telling SDK not initialized');
       return;
@@ -476,6 +468,8 @@ class Telling implements TellingCrashSink {
         metadata: <String, dynamic>{
           'min_version': ?minVersion,
           'current_version': _deviceMetadata?.appVersion,
+          'current_build': _deviceMetadata?.appBuildNumber,
+          'target': target ?? minVersion,
         },
       );
 
@@ -550,9 +544,7 @@ class Telling implements TellingCrashSink {
       'app_open',
       level: LogLevel.info,
       type: LogType.analytics,
-      metadata: <String, dynamic>{
-        'app_version': _deviceMetadata?.appVersion,
-      },
+      metadata: <String, dynamic>{'app_version': _deviceMetadata?.appVersion},
     );
   }
 
@@ -833,10 +825,7 @@ class Telling implements TellingCrashSink {
     _sdkLog(
       'User property set',
       type: LogType.analytics,
-      metadata: <String, dynamic>{
-        'property_key': key,
-        'property_value': value,
-      },
+      metadata: <String, dynamic>{'property_key': key, 'property_value': value},
     );
   }
 
@@ -1162,7 +1151,6 @@ class Telling implements TellingCrashSink {
       '${event.metadata ?? ''}';
 
   Future<void> _flushBuffer() async {
-
     // Skip if we've hit permanent failure (e.g. a bad API key).
     if (_permanentFailure) {
       if (_enableDebugLogs) {
@@ -1175,8 +1163,9 @@ class Telling implements TellingCrashSink {
 
     if (_nextRetryTime != null && DateTime.now().isBefore(_nextRetryTime!)) {
       if (_enableDebugLogs) {
-        final waitSeconds =
-            _nextRetryTime!.difference(DateTime.now()).inSeconds;
+        final waitSeconds = _nextRetryTime!
+            .difference(DateTime.now())
+            .inSeconds;
         print('Telling: Waiting ${waitSeconds}s before retry (backoff)');
       }
       return;
@@ -1289,8 +1278,9 @@ class Telling implements TellingCrashSink {
           // Keep logs in the buffer for the next app session.
         } else {
           if (_enableDebugLogs) {
-            final backoffSeconds =
-                _nextRetryTime!.difference(DateTime.now()).inSeconds;
+            final backoffSeconds = _nextRetryTime!
+                .difference(DateTime.now())
+                .inSeconds;
             print(
               'Telling: Failed ($statusCode). Retry $_consecutiveFailures/$_maxConsecutiveFailures in ${backoffSeconds}s',
             );
@@ -1314,8 +1304,9 @@ class Telling implements TellingCrashSink {
         // Keep logs in the buffer for the next app session.
       } else {
         if (_enableDebugLogs) {
-          final backoffSeconds =
-              _nextRetryTime!.difference(DateTime.now()).inSeconds;
+          final backoffSeconds = _nextRetryTime!
+              .difference(DateTime.now())
+              .inSeconds;
           print(
             'Telling: Connection issue. Retry $_consecutiveFailures/$_maxConsecutiveFailures in ${backoffSeconds}s',
           );
@@ -1470,11 +1461,13 @@ class Telling implements TellingCrashSink {
 
   /// Setup app lifecycle listeners for session tracking.
   void _setupAppLifecycleListeners() {
-    WidgetsBinding.instance.addObserver(_AppLifecycleObserver(
-      onPause: _onAppPaused,
-      onResume: _onAppResumed,
-      onDetach: handleAppDetached,
-    ));
+    WidgetsBinding.instance.addObserver(
+      _AppLifecycleObserver(
+        onPause: _onAppPaused,
+        onResume: _onAppResumed,
+        onDetach: handleAppDetached,
+      ),
+    );
   }
 
   /// Ends the session and makes a final flush attempt.

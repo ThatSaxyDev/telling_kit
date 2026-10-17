@@ -1,3 +1,12 @@
+## 1.0.1 - 2026-10-17
+
+- Send installed build numbers on project version checks, supporting independent
+  iOS and Android minimum builds configured through Telling.
+- Add `minBuild`, `target`, `decisionSource` and `snoozeTarget` to version results.
+- Add optional `target` to `snoozeUpdate()` and `acceptUpdate()` for build-aware
+  snoozes, preserving existing method calls and older server responses.
+- Bound version checks with a timeout and retain fail-open behavior.
+
 ## 1.0.0 (2026-10-15)
 
 First release. The DartNative edition of

@@ -3,7 +3,7 @@ description: >-
   Telling for DartNative: crash reporting, error tracking and analytics with
   offline batching, sessions and uncaught-error capture — the telling_logger
   API, without Flutter.
-version: 1.0.0
+version: 1.0.1
 
 repository: https://github.com/ThatSaxyDev/telling_kit
 homepage: https://github.com/ThatSaxyDev/telling_kit
